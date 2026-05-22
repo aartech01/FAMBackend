@@ -1,0 +1,52 @@
+◇ injected env (34) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+MongoDB database connected successfully
+⏰ Cron jobs started successfully
+   - Birthday notifications: Daily at 9:00 AM
+   - Anniversary notifications: Daily at 9:00 AM
+   - Event reminders: Daily at 8:00 AM
+   - Organizer cleanup: Daily at 12:00 AM
+   - Log archival: Monthly on 1st at 3:00 AM
+Server running on port 8000
+📋 API Routes:
+   - POST   /api/auth/send-otp      - Send OTP for user login
+   - POST   /api/auth/verify-otp    - Verify OTP and login
+   - POST   /api/admin/login        - Admin login
+   - POST   /api/organizer/login    - Organizer login
+   - GET    /api/user/profile       - Get user profile
+   - POST   /api/events/join        - Join event via QR/Code
+   - POST   /api/tree/add-relation  - Add family relationship
+Redis connected successfully
+(node:24140) [MONGOOSE] Warning: mongoose: Duplicate schema index on {"email":1} for model "User". This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+=== SEND OTP DEBUG ===
+Email: fr17044293@test.com
+Generated OTP: 366399
+Creating new user
+OTP stored for user: fr17044293@test.com
+Email sent to fr17044293@test.com: <8b07e44a-aa46-fed6-f520-d8db7a03d8ac@gmail.com>
+OTP email sent
+=== VERIFY OTP DEBUG ===
+Email: fr17044293@test.com
+OTP provided: 366399
+Stored OTP: 366399
+OTP Expiry: 2026-05-15T11:39:43.736Z
+Current time: 2026-05-15T11:34:49.408Z
+✅ OTP validated successfully
+✅ Auto-generated username: fr17044293
+✅ User saved, tokens generated
+(node:24140) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
+=== SEND OTP DEBUG ===
+Email: new17050042@t.com
+Generated OTP: 678289
+Creating new user
+OTP stored for user: new17050042@t.com
+Email sent to new17050042@t.com: <e7945848-78e2-b867-28e1-76b5ec4782f1@gmail.com>
+OTP email sent
+=== VERIFY OTP DEBUG ===
+Email: fr17044293@test.com
+OTP provided: 000000
+Stored OTP: null
+OTP Expiry: null
+Current time: 2026-05-15T11:35:03.202Z
+(node:24140) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
