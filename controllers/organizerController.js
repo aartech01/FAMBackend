@@ -150,10 +150,8 @@ export const organizerLogin = async (req, res) => {
       });
     }
 
-    // Check if access has expired
+    // Check if access has expired — do NOT set isActive=false here; cron job handles that
     if (organizer.validTill && new Date() > organizer.validTill) {
-      organizer.isActive = false;
-      await organizer.save();
       return res.status(403).json({
         success: false,
         message: "Your organizer access has expired. Please contact admin.",

@@ -44,7 +44,6 @@
 
 
 
-// utils/sendEmail.js
 import { sendOTPEmail } from "../services/emailService.js";
 
 const sendOTP = async (email, otp) => {

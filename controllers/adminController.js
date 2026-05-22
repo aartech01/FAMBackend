@@ -199,6 +199,7 @@ import { generateEventQRCode, uploadQRToCloudinary } from "../services/qrService
 import { createLog } from "../services/auditService.js";
 import { sendNotification } from "../services/notificationService.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { sendOrganizerCredentials } from "../services/emailService.js";
 import mongoose from "mongoose"
 
 // Generate a unique event code with retry on collision
@@ -328,13 +329,15 @@ export const createOrganizer = async (req, res) => {
     }
 
     const tempPassword = Math.random().toString(36).slice(-10);
+    const accessCode = Math.random().toString(36).slice(-6).toUpperCase();
 
     const organizer = new Organizer({
       name,
       email,
       password: tempPassword,
       assignedEvent: assignedEvent || null,
-      accessCode: Math.random().toString(36).slice(-8).toUpperCase(),
+      assignedEvents: assignedEvent ? [assignedEvent] : [],
+      accessCode,
       isActive: true,
       validTill: validTill || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
       createdBy: req.user.id,
@@ -347,6 +350,10 @@ export const createOrganizer = async (req, res) => {
     });
 
     await organizer.save();
+
+    // Send credentials email (non-fatal)
+    sendOrganizerCredentials(email, name, tempPassword, accessCode, assignedEvent ? 'your assigned event' : 'FAM')
+      .catch((err) => console.error('Organizer credentials email failed (non-fatal):', err.message));
 
     res.status(201).json({
       success: true,
@@ -1387,6 +1394,12 @@ export const createEvent = async (req, res) => {
       }
     } catch (anchorErr) {
       console.error('Anchor placeholder creation error (non-fatal):', anchorErr.message);
+    }
+
+    // Send credentials email to organizer (only for newly created organizers)
+    if (!isExistingOrganizer && tempPassword) {
+      sendOrganizerCredentials(organizer.email, organizer.name, tempPassword, organizer.accessCode, event.eventName)
+        .catch((err) => console.error('Organizer credentials email failed (non-fatal):', err.message));
     }
 
     res.status(201).json({
