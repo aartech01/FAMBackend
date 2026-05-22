@@ -50,4 +50,4 @@ const sendOTP = async (email, otp) => {
   return await sendOTPEmail(email, otp);
 };
 
-export default sendOTP;
+export default sendOTP; 
