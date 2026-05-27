@@ -4,7 +4,7 @@ import TreeEngine from "../services/treeEngine.js";
 import Event from "../models/Event.js";
 import User from "../models/User.js";
 import { createLog } from "../services/auditService.js";
-import { sendNotification, broadcastTreeUpdate } from "../services/notificationService.js";
+import { sendNotification, broadcastTreeUpdate, broadcastThemeChange } from "../services/notificationService.js";
 import Organizer from "../models/Organizer.js";
 
 // Add relationship
@@ -263,6 +263,8 @@ export const getTree = async (req, res) => {
         groomName: event.groomName || null,
         brideName: event.brideName || null,
         mainPersonName: event.mainPersonName || null,
+        treeTheme: event.treeTheme || "classic",
+        treeThemeLocked: event.treeThemeLocked || false,
       },
       hiddenUserIds: (event.hiddenFromTree || []).map(h => String(h.userId)),
     });
@@ -542,6 +544,51 @@ export const restorePersonToTree = async (req, res) => {
     broadcastTreeUpdate(event.participants || [], eventId);
 
     res.status(200).json({ success: true, message: "Person restored to tree view" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const VALID_THEMES = ["classic", "forest", "moonlit", "golden", "rose", "ivory", "sage", "obsidian", "champagne", "velvet"];
+
+// Set tree background theme (organizer if not locked; admin always)
+export const setTreeTheme = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { theme } = req.body;
+    if (!VALID_THEMES.includes(theme)) {
+      return res.status(400).json({ success: false, message: "Invalid theme" });
+    }
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+    if (req.user.role === "organizer" && event.treeThemeLocked) {
+      return res.status(403).json({ success: false, message: "Theme is locked by admin" });
+    }
+    event.treeTheme = theme;
+    await event.save();
+    // Broadcast to everyone who can view this event's tree: participants, organizers, and the creator admin
+    const allViewerIds = [
+      ...(event.participants || []),
+      ...(event.organizers  || []),
+      ...(event.createdBy   ? [event.createdBy] : []),
+    ];
+    broadcastThemeChange(allViewerIds, eventId, theme);
+    res.status(200).json({ success: true, message: "Theme updated", theme });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Lock or unlock the tree theme (admin only)
+export const lockTreeTheme = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { locked } = req.body;
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+    event.treeThemeLocked = !!locked;
+    await event.save();
+    res.status(200).json({ success: true, message: locked ? "Theme locked" : "Theme unlocked", locked: event.treeThemeLocked });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

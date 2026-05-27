@@ -76,6 +76,16 @@ export const broadcastTreeUpdate = (participantIds, eventId) => {
   }
 };
 
+// Lightweight socket-only broadcast for theme changes.
+// Emits 'theme_changed' so clients update canvas background without a full tree reload.
+export const broadcastThemeChange = (participantIds, eventId, theme) => {
+  if (!ioInstance) return;
+  const payload = { eventId: String(eventId), theme };
+  for (const uid of participantIds) {
+    ioInstance.to(`user_${String(uid)}`).emit('theme_changed', payload);
+  }
+};
+
 // Send bulk notifications
 export const sendBulkNotifications = async (userIds, type, title, message, relatedEvent = null) => {
   const results = [];

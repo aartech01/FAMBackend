@@ -142,19 +142,13 @@ export const organizerLogin = async (req, res) => {
       });
     }
 
-    // Check if organizer is active
+    // isActive is the single source of truth — the midnight cron flips it when validTill passes.
+    // Don't double-gate on validTill here; that causes false-403s when the cron hasn't run yet
+    // but the admin has kept the organizer explicitly active.
     if (!organizer.isActive) {
       return res.status(403).json({
         success: false,
         message: "Your account has been deactivated. Please contact admin.",
-      });
-    }
-
-    // Check if access has expired — do NOT set isActive=false here; cron job handles that
-    if (organizer.validTill && new Date() > organizer.validTill) {
-      return res.status(403).json({
-        success: false,
-        message: "Your organizer access has expired. Please contact admin.",
       });
     }
 

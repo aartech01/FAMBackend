@@ -100,6 +100,15 @@ const eventSchema = new mongoose.Schema(
         hiddenAt: { type: Date, default: Date.now },
       },
     ],
+    treeTheme: {
+      type: String,
+      enum: ["classic", "forest", "moonlit", "golden", "rose", "ivory", "sage", "obsidian", "champagne", "velvet"],
+      default: "classic",
+    },
+    treeThemeLocked: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

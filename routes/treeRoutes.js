@@ -7,7 +7,7 @@
  */
 import express from "express";
 import { verifyToken } from "../middleware/auth.js";
-import { isAdminOrOrganizer } from "../middleware/roleMiddleware.js";
+import { isAdminOrOrganizer, isAdmin } from "../middleware/roleMiddleware.js";
 import {
   addRelationship,
   removeRelationship,
@@ -19,6 +19,8 @@ import {
   findRelationshipPath,
   hidePersonFromTree,
   restorePersonToTree,
+  setTreeTheme,
+  lockTreeTheme,
 } from "../controllers/treeController.js";
 
 const router = express.Router();
@@ -248,5 +250,7 @@ router.post("/set-wedding-couple", isAdminOrOrganizer, setWeddingCouple);
 
 router.patch("/:eventId/hide-person",    isAdminOrOrganizer, hidePersonFromTree);
 router.patch("/:eventId/restore-person", isAdminOrOrganizer, restorePersonToTree);
+router.patch("/:eventId/theme",          isAdminOrOrganizer, setTreeTheme);
+router.patch("/:eventId/lock-theme",     isAdmin,            lockTreeTheme);
 
 export default router;
