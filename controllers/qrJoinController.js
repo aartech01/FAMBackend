@@ -1,6 +1,7 @@
 // controllers/qrJoinController.js
 import Event from "../models/Event.js";
 import User from "../models/User.js";
+import Relationship from "../models/Relationship.js";
 import { createLog } from "../services/auditService.js";
 import { sendNotification } from "../services/notificationService.js";
 import Organizer from "../models/Organizer.js";
@@ -14,7 +15,7 @@ if (!fs.existsSync(uploadDir)) {
 
 export const joinEventFromQR = async (req, res) => {
   try {
-    const { eventId, eventCode, userData } = req.body;
+    const { eventId, eventCode, userData, familySide, relationToAnchor } = req.body;
 
     if (!userData || typeof userData !== "object") {
       return res.status(400).json({
@@ -176,6 +177,46 @@ export const joinEventFromQR = async (req, res) => {
     await event.save();
     await user.save();
 
+    // Create a pending relationship to the anchor person if provided
+    if (relationToAnchor && familySide) {
+      try {
+        const isWedding = event.treeType === "wedding" || event.treeType === "anniversary";
+        let anchorId = null;
+
+        if (isWedding) {
+          if (familySide === "groom") anchorId = event.treeConfig?.groomId;
+          else if (familySide === "bride") anchorId = event.treeConfig?.brideId;
+        } else {
+          anchorId = event.treeConfig?.mainPersonId;
+        }
+
+        if (anchorId && anchorId.toString() !== user._id.toString()) {
+          const alreadyLinked = await Relationship.findOne({
+            eventId: event._id,
+            $or: [
+              { person1: user._id, person2: anchorId },
+              { person1: anchorId, person2: user._id },
+            ],
+          });
+
+          if (!alreadyLinked) {
+            await Relationship.create({
+              eventId: event._id,
+              addedBy: user._id,
+              person1: user._id,
+              person2: anchorId,
+              relationType: relationToAnchor,
+              familySide: isWedding ? familySide : "common",
+              isValidated: true,   // self-declared on QR join → visible immediately; organizer can remove if wrong
+              createdBy: user._id,
+            });
+          }
+        }
+      } catch (relErr) {
+        console.error("Relationship creation error (non-fatal):", relErr.message);
+      }
+    }
+
     await createLog({
       userId: user._id,
       role: "user",
@@ -186,6 +227,8 @@ export const joinEventFromQR = async (req, res) => {
         eventName: event.eventName,
         hasPhoto: !!profileImageUrl,
         approvalMode: event.approvalMode,
+        familySide: familySide || null,
+        relationToAnchor: relationToAnchor || null,
       },
       ipAddress: req.ip,
     });
@@ -220,6 +263,27 @@ export const getEventJoinForm = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
+    // Resolve anchor person IDs so the frontend can build the relationship selector
+    const anchorPersons = {};
+    if (event.treeConfig?.groomId) {
+      anchorPersons.groom = {
+        id: event.treeConfig.groomId,
+        name: event.groomName || "Groom",
+      };
+    }
+    if (event.treeConfig?.brideId) {
+      anchorPersons.bride = {
+        id: event.treeConfig.brideId,
+        name: event.brideName || "Bride",
+      };
+    }
+    if (event.treeConfig?.mainPersonId) {
+      anchorPersons.main = {
+        id: event.treeConfig.mainPersonId,
+        name: event.mainPersonName || "Main Person",
+      };
+    }
+
     res.status(200).json({
       success: true,
       event: {
@@ -234,22 +298,7 @@ export const getEventJoinForm = async (req, res) => {
         groomName: event.groomName || null,
         brideName: event.brideName || null,
         mainPersonName: event.mainPersonName || null,
-        formFields: {
-          required: [
-            { name: "name", type: "text", label: "Full Name", placeholder: "Enter your full name" },
-            { name: "email", type: "email", label: "Email Address", placeholder: "you@example.com" },
-            { name: "dob", type: "date", label: "Date of Birth" },
-          ],
-          optional: [
-            { name: "profilePhoto", type: "file", label: "Profile Photo", accept: "image/*" },
-            { name: "bloodGroup", type: "select", label: "Blood Group", options: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] },
-            { name: "profession", type: "text", label: "Profession" },
-            { name: "location", type: "text", label: "Location" },
-            { name: "gender", type: "select", label: "Gender", options: ["male", "female", "other"] },
-            { name: "phone", type: "tel", label: "Phone Number" },
-            { name: "socialMediaLink", type: "url", label: "Social Media Link" },
-          ],
-        },
+        anchorPersons,
       },
     });
   } catch (error) {
