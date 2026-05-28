@@ -6,6 +6,9 @@
 
 
 // server.js
+import dns from "dns";
+dns.setDefaultResultOrder("ipv4first"); // Railway doesn't support IPv6 outbound — force IPv4 for all DNS lookups
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
