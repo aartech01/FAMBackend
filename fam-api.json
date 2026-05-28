@@ -1,0 +1,1245 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "FAM API",
+    "version": "1.0.0",
+    "description": "Family Attendance & Memory — full API. Three roles: admin (name+password), organizer (email+password), user (email+OTP). All protected routes need Bearer token from login response."
+  },
+  "servers": [
+    {
+      "url": "https://web-production-bf889.up.railway.app",
+      "description": "Production (Railway)"
+    },
+    {
+      "url": "http://localhost:8000",
+      "description": "Local dev"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string" },
+          "data": { "type": "object" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Server health check",
+        "responses": {
+          "200": {
+            "description": "Server is running",
+            "content": {
+              "application/json": {
+                "example": { "status": "ok", "timestamp": "2026-05-28T00:00:00.000Z" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/test-email": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Test email delivery (diagnostics)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "to",
+            "schema": { "type": "string" },
+            "description": "Recipient email (defaults to EMAIL_USER env var)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email test result",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "error": null,
+                  "emailUser": "driv****",
+                  "emailFrom": "Family Tree Platform <drivestorage63766@gmail.com>",
+                  "port": 587
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/send-otp": {
+      "post": {
+        "tags": ["Auth — User OTP"],
+        "summary": "Step 1: Send OTP to user email",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email"],
+                "properties": {
+                  "email": { "type": "string", "example": "user@example.com" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP sent",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "OTP sent to your email",
+                  "isNewUser": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Email delivery failed",
+            "content": {
+              "application/json": {
+                "example": { "success": false, "message": "Email delivery failed: Invalid login" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-otp": {
+      "post": {
+        "tags": ["Auth — User OTP"],
+        "summary": "Step 2: Verify OTP and get JWT token",
+        "description": "If isNewUser=true from send-otp, include username and dob in this call too.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "otp"],
+                "properties": {
+                  "email": { "type": "string", "example": "user@example.com" },
+                  "otp": { "type": "string", "example": "123456" },
+                  "username": { "type": "string", "example": "john_doe", "description": "Required only when isNewUser=true" },
+                  "dob": { "type": "string", "format": "date", "example": "1995-06-15", "description": "Required only when isNewUser=true" },
+                  "gender": { "type": "string", "enum": ["male", "female", "other"], "example": "male" },
+                  "bloodGroup": { "type": "string", "example": "O+" },
+                  "profession": { "type": "string", "example": "Software Engineer" },
+                  "location": { "type": "string", "example": "Mumbai, India" },
+                  "phone": { "type": "string", "example": "+91 9876543210" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful — save token and refreshToken",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Login successful",
+                  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "isNewUser": false,
+                  "user": {
+                    "id": "664abc123def456",
+                    "username": "john_doe",
+                    "email": "user@example.com",
+                    "role": "user",
+                    "profileComplete": true
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid or expired OTP" }
+        }
+      }
+    },
+    "/api/auth/refresh-token": {
+      "post": {
+        "tags": ["Auth — User OTP"],
+        "summary": "Exchange refresh token for a new access token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["refreshToken"],
+                "properties": {
+                  "refreshToken": { "type": "string", "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "New access token issued" },
+          "401": { "description": "Invalid or expired refresh token" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["Auth — User OTP"],
+        "summary": "User logout",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Logged out" }
+        }
+      }
+    },
+    "/api/admin/login": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Admin login with name + password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "password"],
+                "properties": {
+                  "name": { "type": "string", "example": "adminFAM" },
+                  "password": { "type": "string", "example": "adminPass@4569" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Admin logged in — save token",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Admin logged in successfully",
+                  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "admin": {
+                    "id": "664abc123def456",
+                    "name": "adminFAM",
+                    "email": "admin@familytree.com",
+                    "role": "admin"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/admin/logout": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Admin logout",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Logged out" } }
+      }
+    },
+    "/api/admin/profile": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get admin profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Admin profile" } }
+      }
+    },
+    "/api/admin/dashboard/stats": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get dashboard stats (total users, events, organizers)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Stats",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": { "totalUsers": 120, "totalEvents": 5, "totalOrganizers": 5, "activeEvents": 3 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/events": {
+      "get": {
+        "tags": ["Admin — Events"],
+        "summary": "List all events",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of events" } }
+      },
+      "post": {
+        "tags": ["Admin — Events"],
+        "summary": "Create a new event (auto-creates organizer account)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eventName", "organizerEmail", "eventDate"],
+                "properties": {
+                  "eventName": { "type": "string", "example": "Sharma Family Reunion 2026" },
+                  "organizerEmail": { "type": "string", "example": "organizer@example.com" },
+                  "eventDate": { "type": "string", "format": "date", "example": "2026-12-25" },
+                  "eventEndDate": { "type": "string", "format": "date", "example": "2026-12-27" },
+                  "description": { "type": "string", "example": "Annual family reunion" },
+                  "eventType": { "type": "string", "enum": ["wedding", "reunion", "birthday", "festival", "other"], "example": "reunion" },
+                  "approvalMode": { "type": "string", "enum": ["auto", "manual"], "example": "manual" },
+                  "groomName": { "type": "string", "example": "Rahul" },
+                  "brideName": { "type": "string", "example": "Priya" },
+                  "mainPersonName": { "type": "string", "example": "Ramesh Sharma" },
+                  "treeType": { "type": "string", "enum": ["common", "wedding", "anniversary"], "example": "common" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Event created, organizer credentials emailed" },
+          "400": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/admin/events/summary": {
+      "get": {
+        "tags": ["Admin — Events"],
+        "summary": "Get all events with participant counts",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Events with user counts" } }
+      }
+    },
+    "/api/admin/events/{id}": {
+      "patch": {
+        "tags": ["Admin — Events"],
+        "summary": "Update event details",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eventName": { "type": "string" },
+                  "eventDate": { "type": "string", "format": "date" },
+                  "description": { "type": "string" },
+                  "approvalMode": { "type": "string", "enum": ["auto", "manual"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Event updated" } }
+      },
+      "delete": {
+        "tags": ["Admin — Events"],
+        "summary": "Delete an event",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Event deleted" } }
+      }
+    },
+    "/api/admin/events/{id}/approval-mode": {
+      "patch": {
+        "tags": ["Admin — Events"],
+        "summary": "Change event join approval mode",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["approvalMode"],
+                "properties": {
+                  "approvalMode": { "type": "string", "enum": ["auto", "manual"], "example": "auto" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Approval mode updated" } }
+      }
+    },
+    "/api/admin/events/{id}/tree-visibility": {
+      "patch": {
+        "tags": ["Admin — Events"],
+        "summary": "Update tree visibility setting",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "treeVisibility": { "type": "string", "enum": ["participants", "organizer_only", "admin_only"], "example": "participants" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Visibility updated" } }
+      }
+    },
+    "/api/admin/events/{eventId}/users": {
+      "get": {
+        "tags": ["Admin — Events"],
+        "summary": "Get users for a specific event",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Array of users" } }
+      }
+    },
+    "/api/admin/events/{eventId}/approve/{userId}": {
+      "patch": {
+        "tags": ["Admin — Events"],
+        "summary": "Approve a pending user to join event",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" },
+          { "in": "path", "name": "userId", "required": true, "schema": { "type": "string" }, "example": "664abc789def012" }
+        ],
+        "responses": { "200": { "description": "User approved" } }
+      }
+    },
+    "/api/admin/events/{eventId}/reject/{userId}": {
+      "patch": {
+        "tags": ["Admin — Events"],
+        "summary": "Reject a pending user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" },
+          { "in": "path", "name": "userId", "required": true, "schema": { "type": "string" }, "example": "664abc789def012" }
+        ],
+        "responses": { "200": { "description": "User rejected" } }
+      }
+    },
+    "/api/admin/organizers": {
+      "get": {
+        "tags": ["Admin — Organizers"],
+        "summary": "List all organizers",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of organizer objects" } }
+      },
+      "post": {
+        "tags": ["Admin — Organizers"],
+        "summary": "Create a standalone organizer",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "eventId"],
+                "properties": {
+                  "name": { "type": "string", "example": "Ramesh Organizer" },
+                  "email": { "type": "string", "example": "organizer@example.com" },
+                  "eventId": { "type": "string", "example": "664abc123def456" },
+                  "validTill": { "type": "string", "format": "date", "example": "2027-01-01" },
+                  "permissions": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "example": ["approve_users", "manage_schedule", "view_tree"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Organizer created" } }
+      }
+    },
+    "/api/admin/organizers/{id}": {
+      "get": {
+        "tags": ["Admin — Organizers"],
+        "summary": "Get organizer by ID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Organizer object" } }
+      },
+      "patch": {
+        "tags": ["Admin — Organizers"],
+        "summary": "Update organizer",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "validTill": { "type": "string", "format": "date", "example": "2027-06-01" },
+                  "permissions": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Organizer updated" } }
+      },
+      "delete": {
+        "tags": ["Admin — Organizers"],
+        "summary": "Remove organizer",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Organizer removed" } }
+      }
+    },
+    "/api/admin/organizers/{id}/reactivate": {
+      "patch": {
+        "tags": ["Admin — Organizers"],
+        "summary": "Reactivate a deactivated organizer",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Organizer reactivated" } }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["Admin — Users"],
+        "summary": "List all registered users",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of user objects" } }
+      }
+    },
+    "/api/admin/users/{id}/block": {
+      "patch": {
+        "tags": ["Admin — Users"],
+        "summary": "Block a user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": { "type": "string", "example": "Spam/abuse reported" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "User blocked" } }
+      }
+    },
+    "/api/admin/users/{id}/unblock": {
+      "patch": {
+        "tags": ["Admin — Users"],
+        "summary": "Unblock a user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "User unblocked" } }
+      }
+    },
+    "/api/admin/users/blocked": {
+      "get": {
+        "tags": ["Admin — Users"],
+        "summary": "List all blocked users",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of blocked users" } }
+      }
+    },
+    "/api/admin/users/blocked/summary": {
+      "get": {
+        "tags": ["Admin — Users"],
+        "summary": "Summary stats of blocked users",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Blocked users summary" } }
+      }
+    },
+    "/api/admin/reports": {
+      "get": {
+        "tags": ["Admin — Reports"],
+        "summary": "List all user reports",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of reports" } }
+      }
+    },
+    "/api/admin/reports/{id}/review": {
+      "patch": {
+        "tags": ["Admin — Reports"],
+        "summary": "Review a report (accept or dismiss)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": { "type": "string", "enum": ["reviewed", "dismissed"], "example": "reviewed" },
+                  "adminNote": { "type": "string", "example": "Verified — user warned" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Report reviewed" } }
+      }
+    },
+    "/api/admin/logs": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get audit logs (paginated)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": { "200": { "description": "Paginated audit logs" } }
+      }
+    },
+    "/api/organizer/login": {
+      "post": {
+        "tags": ["Organizer"],
+        "summary": "Organizer login with email + password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "example": "organizer@example.com" },
+                  "password": { "type": "string", "example": "TempPass@1234" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Organizer logged in — save token",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "organizer": {
+                    "id": "664abc123def456",
+                    "name": "Ramesh Organizer",
+                    "email": "organizer@example.com",
+                    "role": "organizer",
+                    "assignedEvent": "664event123def456"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials" },
+          "403": { "description": "Account deactivated" }
+        }
+      }
+    },
+    "/api/organizer/logout": {
+      "post": {
+        "tags": ["Organizer"],
+        "summary": "Organizer logout",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Logged out" } }
+      }
+    },
+    "/api/organizer/profile": {
+      "get": {
+        "tags": ["Organizer"],
+        "summary": "Get organizer profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Organizer profile" } }
+      }
+    },
+    "/api/organizer/assigned-event": {
+      "get": {
+        "tags": ["Organizer"],
+        "summary": "Get the event assigned to this organizer",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Assigned event details" } }
+      }
+    },
+    "/api/organizer/stats": {
+      "get": {
+        "tags": ["Organizer"],
+        "summary": "Organizer dashboard statistics",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Stats for assigned event" } }
+      }
+    },
+    "/api/organizer/participants": {
+      "get": {
+        "tags": ["Organizer"],
+        "summary": "List approved participants of assigned event",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of participants" } }
+      }
+    },
+    "/api/organizer/pending-approvals": {
+      "get": {
+        "tags": ["Organizer"],
+        "summary": "List users pending approval to join",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of pending users" } }
+      }
+    },
+    "/api/organizer/approve/{userId}": {
+      "patch": {
+        "tags": ["Organizer"],
+        "summary": "Approve a pending user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "userId", "required": true, "schema": { "type": "string" }, "example": "664abc789def012" }],
+        "responses": { "200": { "description": "User approved" } }
+      }
+    },
+    "/api/organizer/reject/{userId}": {
+      "patch": {
+        "tags": ["Organizer"],
+        "summary": "Reject a pending user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "userId", "required": true, "schema": { "type": "string" }, "example": "664abc789def012" }],
+        "responses": { "200": { "description": "User rejected" } }
+      }
+    },
+    "/api/organizer/schedule": {
+      "patch": {
+        "tags": ["Organizer"],
+        "summary": "Update event schedule",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "schedule": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "title": { "type": "string", "example": "Welcome Dinner" },
+                        "description": { "type": "string", "example": "Family dinner at the main hall" },
+                        "dateTime": { "type": "string", "format": "date-time", "example": "2026-12-25T19:00:00.000Z" },
+                        "location": { "type": "string", "example": "Main Hall, Hotel Grand" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Schedule updated" } }
+      }
+    },
+    "/api/organizer/event/approval-mode": {
+      "patch": {
+        "tags": ["Organizer"],
+        "summary": "Update approval mode of assigned event",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["approvalMode"],
+                "properties": {
+                  "approvalMode": { "type": "string", "enum": ["auto", "manual"], "example": "manual" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Approval mode updated" } }
+      }
+    },
+    "/api/organizer/unvalidated-relationships": {
+      "get": {
+        "tags": ["Organizer"],
+        "summary": "List family relationships awaiting validation",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of unvalidated relationships" } }
+      }
+    },
+    "/api/organizer/validate-relationship/{id}": {
+      "patch": {
+        "tags": ["Organizer"],
+        "summary": "Approve or reject a proposed relationship",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": { "type": "string", "enum": ["approve", "reject"], "example": "approve" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Relationship validated/rejected" } }
+      }
+    },
+    "/api/user/profile": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Get current user's profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "User profile object" } }
+      },
+      "patch": {
+        "tags": ["User"],
+        "summary": "Update profile",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "example": "john_doe" },
+                  "dob": { "type": "string", "format": "date", "example": "1995-06-15" },
+                  "gender": { "type": "string", "enum": ["male", "female", "other"] },
+                  "bloodGroup": { "type": "string", "example": "O+" },
+                  "profession": { "type": "string", "example": "Doctor" },
+                  "location": { "type": "string", "example": "Delhi, India" },
+                  "phone": { "type": "string", "example": "+91 9876543210" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Profile updated" } }
+      }
+    },
+    "/api/user/profile/upload-image": {
+      "post": {
+        "tags": ["User"],
+        "summary": "Upload profile image (multipart/form-data)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Image uploaded — returns Cloudinary URL" }
+        }
+      }
+    },
+    "/api/user/history": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Get user's event join history",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of past events" } }
+      }
+    },
+    "/api/user/notifications": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Get user's notifications",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of notifications" } }
+      }
+    },
+    "/api/events/validate-code": {
+      "post": {
+        "tags": ["Events"],
+        "summary": "Validate an event code (public — no auth needed)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eventCode"],
+                "properties": {
+                  "eventCode": { "type": "string", "example": "SHARMA2026" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Event found — returns event preview" },
+          "404": { "description": "Invalid event code" }
+        }
+      }
+    },
+    "/api/events/join": {
+      "post": {
+        "tags": ["Events"],
+        "summary": "Join an event using event code",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eventCode"],
+                "properties": {
+                  "eventCode": { "type": "string", "example": "SHARMA2026" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "joinStatus: approved or pending_approval",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "joinStatus": "pending_approval",
+                  "message": "Join request submitted, awaiting organizer approval"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": ["Events"],
+        "summary": "List events the authenticated user has joined",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of joined events" } }
+      }
+    },
+    "/api/events/{id}": {
+      "get": {
+        "tags": ["Events"],
+        "summary": "Get event by ID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Event object" } }
+      }
+    },
+    "/api/events/{id}/qr": {
+      "get": {
+        "tags": ["Events"],
+        "summary": "Get QR code (regenerated live from FRONTEND_URL env var)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": {
+          "200": {
+            "description": "QR code as base64 data URL",
+            "content": {
+              "application/json": {
+                "example": { "success": true, "qrCode": "data:image/png;base64,...", "eventCode": "SHARMA2026" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events/{eventId}/participants": {
+      "get": {
+        "tags": ["Events"],
+        "summary": "List participants of an event",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Array of participant users" } }
+      }
+    },
+    "/api/qr/event-form/{eventId}": {
+      "get": {
+        "tags": ["QR Join (Public)"],
+        "summary": "Get the join form fields for a QR scan (no auth needed)",
+        "parameters": [{ "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": {
+          "200": {
+            "description": "Form field definitions",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "event": { "eventName": "Sharma Family Reunion", "eventType": "reunion" },
+                  "fields": ["name", "email", "dob", "phone", "bloodGroup"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/qr/join-from-qr": {
+      "post": {
+        "tags": ["QR Join (Public)"],
+        "summary": "Submit QR join form (no auth needed)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eventId", "name", "email", "dob"],
+                "properties": {
+                  "eventId": { "type": "string", "example": "664abc123def456" },
+                  "eventCode": { "type": "string", "example": "SHARMA2026" },
+                  "name": { "type": "string", "example": "Rahul Sharma" },
+                  "email": { "type": "string", "example": "rahul@example.com" },
+                  "dob": { "type": "string", "format": "date", "example": "1998-03-22" },
+                  "phone": { "type": "string", "example": "+91 9876543210" },
+                  "gender": { "type": "string", "enum": ["male", "female", "other"], "example": "male" },
+                  "bloodGroup": { "type": "string", "example": "B+" },
+                  "profession": { "type": "string", "example": "Engineer" },
+                  "location": { "type": "string", "example": "Jaipur, India" },
+                  "profilePhoto": { "type": "string", "description": "Base64 data URL", "example": "data:image/jpeg;base64,/9j/4AAQ..." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Join request submitted",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "joinStatus": "pending_approval",
+                  "message": "Request submitted. Waiting for organizer approval."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tree/generate/{eventId}": {
+      "get": {
+        "tags": ["Family Tree"],
+        "summary": "Generate/fetch the family tree for an event",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" },
+          { "in": "query", "name": "familySide", "schema": { "type": "string", "enum": ["groom", "bride", "common"] }, "description": "Wedding/anniversary events only" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tree data",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "nodes": [{ "id": "u1", "label": "Rahul", "data": { "username": "rahul", "profileImage": "https://...", "isDeceased": false } }],
+                  "edges": [{ "source": "u1", "target": "u2", "label": "parent" }],
+                  "mermaidCode": "graph TD\n  u1[Rahul] --> u2[Priya]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tree/add-relation": {
+      "post": {
+        "tags": ["Family Tree"],
+        "summary": "Propose a new family relationship",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eventId", "relatedUserId", "relationshipType"],
+                "properties": {
+                  "eventId": { "type": "string", "example": "664abc123def456" },
+                  "relatedUserId": { "type": "string", "example": "664abc789def012" },
+                  "relationshipType": { "type": "string", "example": "parent", "description": "parent | child | spouse | sibling | grandparent | grandchild | uncle | aunt | cousin" },
+                  "familySide": { "type": "string", "enum": ["groom", "bride", "common"], "example": "groom" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Relationship proposed (pending organizer validation)" },
+          "400": { "description": "Validation error — duplicate, circular, age-gap, or limit reached" }
+        }
+      }
+    },
+    "/api/tree/set-wedding-couple": {
+      "post": {
+        "tags": ["Family Tree"],
+        "summary": "Set groom and bride for a wedding tree (admin/organizer only)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eventId", "groomId", "brideId"],
+                "properties": {
+                  "eventId": { "type": "string", "example": "664abc123def456" },
+                  "groomId": { "type": "string", "example": "664user001def456" },
+                  "brideId": { "type": "string", "example": "664user002def456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Wedding couple configured" } }
+      }
+    },
+    "/api/tree/set-main-person": {
+      "post": {
+        "tags": ["Family Tree"],
+        "summary": "Set root person of the tree (admin/organizer only)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eventId", "userId"],
+                "properties": {
+                  "eventId": { "type": "string", "example": "664abc123def456" },
+                  "userId": { "type": "string", "example": "664user001def456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Main person set" } }
+      }
+    },
+    "/api/tree/history/{eventId}": {
+      "get": {
+        "tags": ["Family Tree"],
+        "summary": "Get tree snapshot history",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Array of tree snapshots" } }
+      }
+    },
+    "/api/tree/{eventId}/theme": {
+      "patch": {
+        "tags": ["Family Tree"],
+        "summary": "Set tree visual theme (admin/organizer only)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "eventId", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "theme": { "type": "string", "enum": ["classic", "forest", "moonlit", "golden", "rose", "ivory", "sage", "obsidian", "champagne", "velvet"], "example": "forest" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Theme updated" } }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "Get all notifications for current user",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Array of notifications" } }
+      }
+    },
+    "/api/notifications/read-all": {
+      "patch": {
+        "tags": ["Notifications"],
+        "summary": "Mark all notifications as read",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "All marked read" } }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "patch": {
+        "tags": ["Notifications"],
+        "summary": "Mark a single notification as read",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Notification marked read" } }
+      }
+    },
+    "/api/notifications/{id}": {
+      "delete": {
+        "tags": ["Notifications"],
+        "summary": "Delete a notification",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" }, "example": "664abc123def456" }],
+        "responses": { "200": { "description": "Notification deleted" } }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Health" },
+    { "name": "Auth — User OTP", "description": "Email OTP login for end users. Step 1: send-otp → Step 2: verify-otp → get token" },
+    { "name": "Admin", "description": "Admin auth and system management. Login: name=adminFAM, password=adminPass@4569" },
+    { "name": "Admin — Events", "description": "Event CRUD by admin" },
+    { "name": "Admin — Organizers", "description": "Organizer management by admin" },
+    { "name": "Admin — Users", "description": "User management (block/unblock) by admin" },
+    { "name": "Admin — Reports", "description": "Review user-submitted reports" },
+    { "name": "Organizer", "description": "Organizer actions on their assigned event" },
+    { "name": "User", "description": "Authenticated end-user profile and preferences" },
+    { "name": "Events", "description": "Event discovery and joining" },
+    { "name": "QR Join (Public)", "description": "No auth needed — QR scan join flow" },
+    { "name": "Family Tree", "description": "Tree generation, relationship management, themes" },
+    { "name": "Notifications", "description": "In-app notifications" }
+  ]
+}

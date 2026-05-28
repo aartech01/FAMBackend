@@ -189,11 +189,28 @@ export const joinEventFromQR = async (req, res) => {
       console.log("✅ Existing user updated with new photo:", user._id);
     }
 
-    // Check if already joined
-    if (user.joinedEvents.some(e => e.toString() === event._id.toString())) {
-      return res.status(400).json({
-        success: false,
-        message: "You have already joined this event"
+    // Check if already a participant, in pending list, or in joinedEvents
+    const alreadyParticipant = event.participants.some(p => p.toString() === user._id.toString());
+    const alreadyPending = event.pendingApprovals.some(p => p.toString() === user._id.toString());
+    const inJoinedEvents = user.joinedEvents.some(e => e.toString() === event._id.toString());
+
+    if (alreadyParticipant || inJoinedEvents) {
+      return res.status(200).json({
+        success: true,
+        message: "You have already joined this event",
+        joinStatus: "already_joined",
+        event: { id: event._id, name: event.eventName, code: event.eventCode },
+        user: { id: user._id, username: user.username, email: user.email, profileImage: user.profileImage },
+      });
+    }
+
+    if (alreadyPending) {
+      return res.status(200).json({
+        success: true,
+        message: "Your join request is already pending approval",
+        joinStatus: "pending_approval",
+        event: { id: event._id, name: event.eventName, code: event.eventCode },
+        user: { id: user._id, username: user.username, email: user.email, profileImage: user.profileImage },
       });
     }
 
