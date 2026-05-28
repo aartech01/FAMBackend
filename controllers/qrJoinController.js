@@ -25,7 +25,6 @@ export const joinEventFromQR = async (req, res) => {
     }
 
     const {
-      name,
       email,
       dob,
       profilePhoto,
@@ -36,6 +35,7 @@ export const joinEventFromQR = async (req, res) => {
       phone,
       socialMediaLink,
     } = userData;
+    const name = (userData.name || '').trim();
 
     if (!name || !email || !dob) {
       return res.status(400).json({
@@ -79,22 +79,32 @@ export const joinEventFromQR = async (req, res) => {
     let user = await User.findOne({ email });
 
     if (!user) {
-      user = new User({
-        username: name,
-        email,
-        dob: new Date(dob),
-        profileImage: profileImageUrl,
-        bloodGroup: bloodGroup || "",
-        profession: profession || "",
-        location: location || "",
-        gender: gender || "",
-        phone: phone || "",
-        socialLinks: socialMediaLink
-          ? { facebook: socialMediaLink, instagram: "", linkedin: "" }
-          : {},
-        joinedEvents: [],
-      });
-      await user.save();
+      try {
+        user = new User({
+          username: name,
+          email,
+          dob: new Date(dob),
+          profileImage: profileImageUrl,
+          bloodGroup: bloodGroup || "",
+          profession: profession || "",
+          location: location || "",
+          gender: gender || "",
+          phone: phone || "",
+          socialLinks: socialMediaLink
+            ? { facebook: socialMediaLink, instagram: "", linkedin: "" }
+            : {},
+          joinedEvents: [],
+        });
+        await user.save();
+      } catch (saveErr) {
+        if (saveErr.code === 11000) {
+          // Concurrent request already created this user — fetch it
+          user = await User.findOne({ email });
+          if (!user) throw saveErr;
+        } else {
+          throw saveErr;
+        }
+      }
     } else {
       if (profileImageUrl) {
         user.profileImage = profileImageUrl;
@@ -174,7 +184,23 @@ export const joinEventFromQR = async (req, res) => {
       );
     }
 
-    await event.save();
+    try {
+      await event.save();
+    } catch (savErr) {
+      if (savErr.name === 'VersionError') {
+        // Re-fetch and re-apply the participant/pending change
+        event = await Event.findById(event._id);
+        const alreadyIn = event.participants.some(p => p.toString() === user._id.toString())
+                       || event.pendingApprovals.some(p => p.toString() === user._id.toString());
+        if (!alreadyIn) {
+          if (joinStatus === 'approved') event.participants.push(user._id);
+          else event.pendingApprovals.push(user._id);
+        }
+        await event.save();
+      } else {
+        throw savErr;
+      }
+    }
     await user.save();
 
     // Normalise familySide — must be a valid enum value

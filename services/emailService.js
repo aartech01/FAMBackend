@@ -40,6 +40,12 @@ export const sendEmail = async (to, subject, htmlContent, textContent = null) =>
     }
 
     // Local dev: use nodemailer + Gmail
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return {
+        success: false,
+        error: "Email service not configured on server. Set RESEND_API_KEY or EMAIL_USER + EMAIL_PASS in environment variables.",
+      };
+    }
     const info = await transporter.sendMail({
       from,
       to,
