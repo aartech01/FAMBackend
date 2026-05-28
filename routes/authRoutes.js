@@ -9,6 +9,7 @@ import {
 } from "../controllers/userController.js";
 import { verifyToken } from "../middleware/auth.js";
 import { loginRateLimiter } from "../middleware/rateLimiter.js";
+import { sendEmail } from "../services/emailService.js";
 
 const router = express.Router();
 
@@ -51,6 +52,19 @@ const router = express.Router();
  *         description: Too many requests
  */
 router.post("/send-otp", loginRateLimiter, sendOtp);
+
+// Temporary email diagnostics route — remove after confirming email works
+router.get("/test-email", async (req, res) => {
+  const to = req.query.to || process.env.EMAIL_USER;
+  const result = await sendEmail(to, "FAM Email Test", "<p>Email is working from Railway.</p>");
+  res.json({
+    success: result.success,
+    error: result.error || null,
+    emailUser: process.env.EMAIL_USER ? process.env.EMAIL_USER.slice(0, 4) + "****" : "NOT SET",
+    emailFrom: process.env.EMAIL_FROM || "NOT SET",
+    port: 587,
+  });
+});
 
 /**
  * @swagger

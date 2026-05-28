@@ -570,8 +570,6 @@ const sendOtp = async (req, res) => {
         email,
         otp,
         otpExpiry,
-        username: null,
-        dob: null,
         isTemporary: true,
       });
     } else {
@@ -580,7 +578,15 @@ const sendOtp = async (req, res) => {
       await user.save();
     }
 
-    await sendOTP(email, otp);
+    const emailResult = await sendOTP(email, otp);
+    if (!emailResult?.success) {
+      return res.status(500).json({
+        success: false,
+        message: emailResult?.error
+          ? `Email delivery failed: ${emailResult.error}`
+          : "Could not send OTP email. Check EMAIL_USER and EMAIL_PASS on the server.",
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -589,12 +595,9 @@ const sendOtp = async (req, res) => {
     });
   } catch (error) {
     console.error("Send OTP error:", error.message);
-    // If email delivery failed, return a clear error so the user knows
     res.status(500).json({
       success: false,
-      message: error.message.includes("Failed to send OTP email")
-        ? "Could not send OTP email. Please try again later."
-        : error.message,
+      message: error.message || "Failed to send OTP",
     });
   }
 };

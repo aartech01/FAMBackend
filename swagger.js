@@ -9,7 +9,7 @@ const options = {
       description:
         "Family event management platform — three-role auth (user/admin/organizer), family tree, QR join, notifications.",
     },
-    servers: [{ url: "http://localhost:8000" }],
+    servers: [{ url: process.env.API_URL || "http://localhost:8000" }],
     components: {
       securitySchemes: {
         bearerAuth: {

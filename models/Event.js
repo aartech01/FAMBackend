@@ -115,5 +115,9 @@ const eventSchema = new mongoose.Schema(
   },
 );
 
+eventSchema.index({ isActive: 1, createdAt: -1 });
+eventSchema.index({ createdBy: 1 });
+eventSchema.index({ eventCode: 1 }); // already unique, but explicit for query planner
+
 const Event = mongoose.model("Event", eventSchema);
 export default Event;

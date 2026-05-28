@@ -1,8 +1,16 @@
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-// Create transporter
+// Resend client (used in production when RESEND_API_KEY is set)
+const resendClient = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
+
+// Nodemailer transporter (used in local dev as fallback)
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -12,20 +20,38 @@ const transporter = nodemailer.createTransport({
 // Send email (generic function)
 export const sendEmail = async (to, subject, htmlContent, textContent = null) => {
   try {
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || `"FAM" <${process.env.EMAIL_USER}>`,
+    const from = process.env.EMAIL_FROM || `FAM <${process.env.EMAIL_USER}>`;
+
+    if (resendClient) {
+      // Production: use Resend (works reliably from Railway)
+      const { data, error } = await resendClient.emails.send({
+        from,
+        to: [to],
+        subject,
+        html: htmlContent,
+        text: textContent || htmlContent.replace(/<[^>]*>/g, ""),
+      });
+      if (error) {
+        console.error("Resend error:", error.message);
+        return { success: false, error: error.message };
+      }
+      console.log(`Email sent via Resend to ${to}: ${data?.id}`);
+      return { success: true, messageId: data?.id };
+    }
+
+    // Local dev: use nodemailer + Gmail
+    const info = await transporter.sendMail({
+      from,
       to,
       subject,
       html: htmlContent,
       text: textContent || htmlContent.replace(/<[^>]*>/g, ""),
-    };
-    
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${to}: ${info.messageId}`);
+    });
+    console.log(`Email sent via Gmail to ${to}: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("Email sending error:", error);
-    return { success: false, error: error.message };
+    console.error("Email sending error:", error.message);
+    return { success: false, error: error.message || String(error) };
   }
 };
 
