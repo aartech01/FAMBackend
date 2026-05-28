@@ -120,7 +120,7 @@ import Event from "../models/Event.js";
 import User from "../models/User.js";
 import Relationship from "../models/Relationship.js";
 import jwt from "jsonwebtoken";
-import { sendNotification } from "../services/notificationService.js";
+import { sendNotification, broadcastToEventRoom } from "../services/notificationService.js";
 
 // Organizer Login
 export const organizerLogin = async (req, res) => {
@@ -514,6 +514,9 @@ export const approveUser = async (req, res) => {
     await sendNotification(userId, "approval", "Join Request Approved",
       `Your request to join "${event.eventName}" has been approved!`, event._id);
 
+    // Notify all tree viewers in real-time — their tree will refresh and animate the new node
+    broadcastToEventRoom(event._id, { type: "member_joined", userId: String(userId) });
+
     res.status(200).json({ success: true, message: "User approved successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -592,6 +595,9 @@ export const validateRelationship = async (req, res) => {
 
     relationship.isValidated = isValidated !== undefined ? isValidated : true;
     await relationship.save();
+
+    // Push live tree refresh to all viewers of this event
+    broadcastToEventRoom(relationship.eventId, { type: "relationship_validated" });
 
     res.status(200).json({
       success: true,

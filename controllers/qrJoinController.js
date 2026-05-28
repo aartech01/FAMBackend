@@ -3,15 +3,15 @@ import Event from "../models/Event.js";
 import User from "../models/User.js";
 import Relationship from "../models/Relationship.js";
 import { createLog } from "../services/auditService.js";
-import { sendNotification } from "../services/notificationService.js";
+import { sendNotification, broadcastToEventRoom } from "../services/notificationService.js";
 import Organizer from "../models/Organizer.js";
 import path from "path";
 import fs from "fs";
 
 const uploadDir = "./uploads/profiles";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+try {
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+} catch (_) { /* read-only filesystem (e.g. Railway) — photo upload will be skipped */ }
 
 export const joinEventFromQR = async (req, res) => {
   try {
@@ -177,8 +177,11 @@ export const joinEventFromQR = async (req, res) => {
     await event.save();
     await user.save();
 
-    // Create a pending relationship to the anchor person if provided
-    if (relationToAnchor && familySide) {
+    // Normalise familySide — must be a valid enum value
+    const safeSide = ['groom', 'bride', 'common'].includes(familySide) ? familySide : 'common';
+
+    // Create a relationship to the anchor person if provided
+    if (relationToAnchor && safeSide) {
       try {
         const isWedding = event.treeType === "wedding" || event.treeType === "anniversary";
         let anchorId = null;
@@ -206,7 +209,7 @@ export const joinEventFromQR = async (req, res) => {
               person1: user._id,
               person2: anchorId,
               relationType: relationToAnchor,
-              familySide: isWedding ? familySide : "common",
+              familySide: isWedding ? safeSide : "common",
               isValidated: true,   // self-declared on QR join → visible immediately; organizer can remove if wrong
               createdBy: user._id,
             });
@@ -216,6 +219,17 @@ export const joinEventFromQR = async (req, res) => {
         console.error("Relationship creation error (non-fatal):", relErr.message);
       }
     }
+
+    // Push real-time tree_update to everyone viewing this event's tree so they
+    // see the new node without manually refreshing the page.
+    broadcastToEventRoom(event._id, {
+      type: "member_joined",
+      userId: String(user._id),
+      username: user.username,
+      profileImage: user.profileImage || "",
+      gender: user.gender || "",
+      joinStatus,
+    });
 
     await createLog({
       userId: user._id,

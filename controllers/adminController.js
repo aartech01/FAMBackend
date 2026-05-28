@@ -197,7 +197,7 @@ import Relationship from "../models/Relationship.js";
 import jwt from "jsonwebtoken";
 import { generateEventQRCode, uploadQRToCloudinary } from "../services/qrService.js";
 import { createLog } from "../services/auditService.js";
-import { sendNotification } from "../services/notificationService.js";
+import { sendNotification, broadcastToEventRoom } from "../services/notificationService.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 import { sendOrganizerCredentials } from "../services/emailService.js";
 import mongoose from "mongoose"
@@ -1936,6 +1936,8 @@ export const approveUserAdmin = async (req, res) => {
 
     await sendNotification(userId, "approval", "Join Request Approved",
       `Your request to join "${event.eventName}" has been approved!`, event._id);
+
+    broadcastToEventRoom(event._id, { type: "member_joined", userId: String(userId) });
 
     res.status(200).json({ success: true, message: "User approved successfully" });
   } catch (error) {

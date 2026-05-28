@@ -76,6 +76,17 @@ export const broadcastTreeUpdate = (participantIds, eventId) => {
   }
 };
 
+// Broadcast a tree_update event to everyone currently viewing a specific event's
+// tree. Clients join the room event_<eventId> via the join_event_room socket msg.
+// No DB record, no email — purely real-time.
+export const broadcastToEventRoom = (eventId, payload) => {
+  if (!ioInstance) return;
+  ioInstance.to(`event_${String(eventId)}`).emit('tree_update', {
+    eventId: String(eventId),
+    ...payload,
+  });
+};
+
 // Lightweight socket-only broadcast for theme changes.
 // Emits 'theme_changed' so clients update canvas background without a full tree reload.
 export const broadcastThemeChange = (participantIds, eventId, theme) => {

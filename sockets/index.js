@@ -21,12 +21,23 @@ export const setupSocketIO = (io) => {
   
   io.on("connection", (socket) => {
     console.log(`User connected: ${socket.userId}`);
-    
+
     // Join user's personal room
     if (socket.userId) {
       socket.join(`user_${socket.userId}`);
     }
-    
+
+    // Allow clients to subscribe to a specific event's tree room.
+    // Emitting 'join_event_room' with an eventId joins room event_<id>,
+    // so tree_update broadcasts reach all viewers without per-user iteration.
+    socket.on("join_event_room", (eventId) => {
+      if (eventId) socket.join(`event_${eventId}`);
+    });
+
+    socket.on("leave_event_room", (eventId) => {
+      if (eventId) socket.leave(`event_${eventId}`);
+    });
+
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${socket.userId}`);
     });
