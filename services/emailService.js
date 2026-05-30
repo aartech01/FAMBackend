@@ -17,14 +17,14 @@ const resendClient = process.env.RESEND_API_KEY
 //   },
 // });
 
+const useBrevo = !!(process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS);
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
+  host: useBrevo ? "smtp-relay.brevo.com" : "smtp.gmail.com",
   port: 587,
   secure: false,
-  family: 4,  // force IPv4 — Railway blocks IPv6 outbound
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: useBrevo ? process.env.BREVO_SMTP_USER : process.env.EMAIL_USER,
+    pass: useBrevo ? process.env.BREVO_SMTP_PASS : process.env.EMAIL_PASS,
   },
 });
 
@@ -51,10 +51,12 @@ export const sendEmail = async (to, subject, htmlContent, textContent = null) =>
     }
 
     // Local dev: use nodemailer + Gmail
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    const smtpUser = process.env.BREVO_SMTP_USER || process.env.EMAIL_USER;
+    const smtpPass = process.env.BREVO_SMTP_PASS || process.env.EMAIL_PASS;
+    if (!smtpUser || !smtpPass) {
       return {
         success: false,
-        error: "Email service not configured on server. Set RESEND_API_KEY or EMAIL_USER + EMAIL_PASS in environment variables.",
+        error: "Email service not configured. Set BREVO_SMTP_USER + BREVO_SMTP_PASS (or EMAIL_USER + EMAIL_PASS) in environment variables.",
       };
     }
     const info = await transporter.sendMail({
