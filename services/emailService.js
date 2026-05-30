@@ -1,64 +1,62 @@
 import nodemailer from "nodemailer";
-import { Resend } from "resend";
 
-// Resend client (used in production when RESEND_API_KEY is set)
-const resendClient = process.env.RESEND_API_KEY
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null;
-
-// Nodemailer transporter (used in local dev as fallback)
-// const transporter = nodemailer.createTransport({
-//   host: "smtp.gmail.com",
-//   port: 587,
-//   secure: false,
-//   auth: {
-//     user: process.env.EMAIL_USER,
-//     pass: process.env.EMAIL_PASS,
-//   },
-// });
-
-const useBrevo = !!(process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS);
+// Nodemailer transporter — Gmail SMTP for local dev
 const transporter = nodemailer.createTransport({
-  host: useBrevo ? "smtp-relay.brevo.com" : "smtp.gmail.com",
+  host: "smtp.gmail.com",
   port: 587,
   secure: false,
   auth: {
-    user: useBrevo ? process.env.BREVO_SMTP_USER : process.env.EMAIL_USER,
-    pass: useBrevo ? process.env.BREVO_SMTP_PASS : process.env.EMAIL_PASS,
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
+
+// Send email via Brevo HTTP API (production — works on Railway)
+const sendViaBrevo = async (to, subject, htmlContent, textContent) => {
+  const senderEmail = process.env.EMAIL_USER || "drivestorage63766@gmail.com";
+  const senderName = "FAM";
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": process.env.BREVO_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: to }],
+      subject,
+      htmlContent,
+      textContent: textContent || htmlContent.replace(/<[^>]*>/g, ""),
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const msg = data?.message || JSON.stringify(data);
+    console.error("Brevo API error:", msg);
+    return { success: false, error: msg };
+  }
+  console.log(`Email sent via Brevo to ${to}: ${data?.messageId}`);
+  return { success: true, messageId: data?.messageId };
+};
 
 // Send email (generic function)
 export const sendEmail = async (to, subject, htmlContent, textContent = null) => {
   try {
-    const from = process.env.EMAIL_FROM || `FAM <${process.env.EMAIL_USER}>`;
-
-    if (resendClient) {
-      // Production: use Resend (works reliably from Railway)
-      const { data, error } = await resendClient.emails.send({
-        from,
-        to: [to],
-        subject,
-        html: htmlContent,
-        text: textContent || htmlContent.replace(/<[^>]*>/g, ""),
-      });
-      if (error) {
-        console.error("Resend error:", error.message);
-        return { success: false, error: error.message };
-      }
-      console.log(`Email sent via Resend to ${to}: ${data?.id}`);
-      return { success: true, messageId: data?.id };
+    // Production: Brevo HTTP API — bypasses Railway's SMTP block
+    if (process.env.BREVO_API_KEY) {
+      return await sendViaBrevo(to, subject, htmlContent, textContent);
     }
 
-    // Local dev: use nodemailer + Gmail
-    const smtpUser = process.env.BREVO_SMTP_USER || process.env.EMAIL_USER;
-    const smtpPass = process.env.BREVO_SMTP_PASS || process.env.EMAIL_PASS;
-    if (!smtpUser || !smtpPass) {
+    // Local dev: Gmail SMTP
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       return {
         success: false,
-        error: "Email service not configured. Set BREVO_SMTP_USER + BREVO_SMTP_PASS (or EMAIL_USER + EMAIL_PASS) in environment variables.",
+        error: "Email not configured. Set BREVO_API_KEY (production) or EMAIL_USER + EMAIL_PASS (local).",
       };
     }
+    const from = process.env.EMAIL_FROM || `FAM <${process.env.EMAIL_USER}>`;
     const info = await transporter.sendMail({
       from,
       to,
@@ -66,7 +64,7 @@ export const sendEmail = async (to, subject, htmlContent, textContent = null) =>
       html: htmlContent,
       text: textContent || htmlContent.replace(/<[^>]*>/g, ""),
     });
-    console.log(`Email sent via Gmail to ${to}: ${info.messageId}`);
+    console.log(`Email sent via Gmail SMTP to ${to}: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error("Email sending error:", error.message);
