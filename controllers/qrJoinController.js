@@ -5,17 +5,11 @@ import Relationship from "../models/Relationship.js";
 import { createLog } from "../services/auditService.js";
 import { sendNotification, broadcastToEventRoom } from "../services/notificationService.js";
 import Organizer from "../models/Organizer.js";
-import path from "path";
-import fs from "fs";
-
-const uploadDir = "./uploads/profiles";
-try {
-  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-} catch (_) { /* read-only filesystem (e.g. Railway) — photo upload will be skipped */ }
+import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 
 export const joinEventFromQR = async (req, res) => {
   try {
-    const { eventId, eventCode, userData, familySide, relationToAnchor } = req.body;
+    const { eventId, eventCode, userData, familySide, relationToAnchor, anchorUserId, spouseUserId } = req.body;
 
     if (!userData || typeof userData !== "object") {
       return res.status(400).json({
@@ -60,18 +54,15 @@ export const joinEventFromQR = async (req, res) => {
       return res.status(400).json({ success: false, message: "Event is no longer active" });
     }
 
-    // Save profile photo to disk if provided (non-fatal if it fails)
+    // Upload profile photo to Cloudinary if provided (non-fatal if it fails)
     let profileImageUrl = "";
     if (profilePhoto) {
       try {
         const base64Data = profilePhoto.replace(/^data:image\/\w+;base64,/, "");
         const imageBuffer = Buffer.from(base64Data, "base64");
-        const filename = `user_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.png`;
-        const filepath = path.join(uploadDir, filename);
-        fs.writeFileSync(filepath, imageBuffer);
-        profileImageUrl = `/uploads/profiles/${filename}`;
+        profileImageUrl = await uploadBufferToCloudinary(imageBuffer, { folder: 'fam/profiles' });
       } catch (photoErr) {
-        console.error("Photo save error (non-fatal):", photoErr.message);
+        console.error("Photo upload error (non-fatal):", photoErr.message);
       }
     }
 
@@ -210,35 +201,76 @@ export const joinEventFromQR = async (req, res) => {
     if (relationToAnchor && safeSide) {
       try {
         const isWedding = event.treeType === "wedding" || event.treeType === "anniversary";
-        let anchorId = null;
 
-        if (isWedding) {
-          if (familySide === "groom") anchorId = event.treeConfig?.groomId;
-          else if (familySide === "bride") anchorId = event.treeConfig?.brideId;
-        } else {
-          anchorId = event.treeConfig?.mainPersonId;
+        // Resolve anchor: prefer explicit anchorUserId (Option 1), fall back to groom/bride
+        let finalAnchorId = null;
+        if (anchorUserId) {
+          // Validate anchor belongs to this event (participant or primary person from treeConfig)
+          const isValidAnchor =
+            event.treeConfig?.groomId?.toString() === anchorUserId ||
+            event.treeConfig?.brideId?.toString() === anchorUserId ||
+            event.treeConfig?.mainPersonId?.toString() === anchorUserId ||
+            event.participants.some(p => p.toString() === anchorUserId);
+          if (isValidAnchor) finalAnchorId = anchorUserId;
+        }
+        if (!finalAnchorId) {
+          if (isWedding) {
+            if (familySide === "groom") finalAnchorId = event.treeConfig?.groomId?.toString();
+            else if (familySide === "bride") finalAnchorId = event.treeConfig?.brideId?.toString();
+          } else {
+            finalAnchorId = event.treeConfig?.mainPersonId?.toString();
+          }
         }
 
-        if (anchorId && anchorId.toString() !== user._id.toString()) {
+        if (finalAnchorId && finalAnchorId !== user._id.toString()) {
           const alreadyLinked = await Relationship.findOne({
             eventId: event._id,
             $or: [
-              { person1: user._id, person2: anchorId },
-              { person1: anchorId, person2: user._id },
+              { person1: user._id, person2: finalAnchorId },
+              { person1: finalAnchorId, person2: user._id },
             ],
           });
-
           if (!alreadyLinked) {
             await Relationship.create({
               eventId: event._id,
               addedBy: user._id,
               person1: user._id,
-              person2: anchorId,
+              person2: finalAnchorId,
               relationType: relationToAnchor,
               familySide: isWedding ? safeSide : "common",
-              isValidated: true,   // self-declared on QR join → visible immediately; organizer can remove if wrong
+              isValidated: true,
               createdBy: user._id,
             });
+          }
+        }
+
+        // Option 3: create a spouse edge if spouseUserId is provided (separate from main relation)
+        if (spouseUserId && spouseUserId !== user._id.toString()) {
+          const isValidSpouse =
+            event.treeConfig?.groomId?.toString() === spouseUserId ||
+            event.treeConfig?.brideId?.toString() === spouseUserId ||
+            event.treeConfig?.mainPersonId?.toString() === spouseUserId ||
+            event.participants.some(p => p.toString() === spouseUserId);
+          if (isValidSpouse) {
+            const alreadySpouseLinked = await Relationship.findOne({
+              eventId: event._id,
+              $or: [
+                { person1: user._id, person2: spouseUserId },
+                { person1: spouseUserId, person2: user._id },
+              ],
+            });
+            if (!alreadySpouseLinked) {
+              await Relationship.create({
+                eventId: event._id,
+                addedBy: user._id,
+                person1: user._id,
+                person2: spouseUserId,
+                relationType: "spouse",
+                familySide: isWedding ? safeSide : "common",
+                isValidated: true,
+                createdBy: user._id,
+              });
+            }
           }
         }
       } catch (relErr) {
@@ -341,6 +373,64 @@ export const getEventJoinForm = async (req, res) => {
         anchorPersons,
       },
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Returns existing tree members for a given event + familySide so the QR form
+// can show an anchor picker (Option 1) and spouse picker (Option 3).
+export const getTreeMembers = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { familySide } = req.query;
+
+    const event = await Event.findById(eventId).select('treeConfig treeType');
+    if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+
+    const query = { eventId, isValidated: true };
+    if (familySide && familySide !== 'common') query.familySide = familySide;
+
+    const relationships = await Relationship.find(query)
+      .populate('person1', 'username profileImage gender')
+      .populate('person2', 'username profileImage gender');
+
+    const userMap = new Map();
+    const addUser = (u, isPrimary = false) => {
+      if (!u) return;
+      const key = u._id.toString();
+      if (!userMap.has(key)) {
+        userMap.set(key, { id: u._id, name: u.username, gender: u.gender || '', profileImage: u.profileImage || '', isPrimary });
+      } else if (isPrimary) {
+        userMap.get(key).isPrimary = true;
+      }
+    };
+
+    for (const rel of relationships) {
+      addUser(rel.person1);
+      addUser(rel.person2);
+    }
+
+    // Always include the primary anchor (groom/bride/main) even with no relationships yet
+    const treeConfig = event.treeConfig || {};
+    const primaryId = familySide === 'groom' ? treeConfig.groomId
+      : familySide === 'bride' ? treeConfig.brideId
+      : treeConfig.mainPersonId;
+
+    if (primaryId && !userMap.has(primaryId.toString())) {
+      const u = await User.findById(primaryId).select('username profileImage gender');
+      if (u) addUser(u, true);
+    } else if (primaryId) {
+      userMap.get(primaryId.toString()).isPrimary = true;
+    }
+
+    const members = [...userMap.values()].sort((a, b) => {
+      if (a.isPrimary && !b.isPrimary) return -1;
+      if (!a.isPrimary && b.isPrimary) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    res.status(200).json({ success: true, members });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

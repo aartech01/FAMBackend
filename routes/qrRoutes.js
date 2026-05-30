@@ -9,6 +9,7 @@ import express from "express";
 import {
   joinEventFromQR,
   getEventJoinForm,
+  getTreeMembers,
 } from "../controllers/qrJoinController.js";
 
 const router = express.Router();
@@ -31,6 +32,7 @@ const router = express.Router();
  *         description: Event not found
  */
 router.get("/event-form/:eventId", getEventJoinForm);
+router.get("/tree-members/:eventId", getTreeMembers);
 
 /**
  * @swagger
